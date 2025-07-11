@@ -271,24 +271,7 @@ const Booking: React.FC = () => {
         <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <MapPin className="inline-block w-4 h-4 mr-2" />
-                  Location
-                </label>
-                <select 
-                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
-                  value={formData.location}
-                  onChange={(e) => setFormData({...formData, location: e.target.value})}
-                  required
-                >
-                  <option value="">Select Location</option>
-                  <option value="chennai">Chennai Central</option>
-                  <option value="hyderabad" disabled={selectedSport === 'swimming' || selectedSport === 'gym'}>Hyderabad Jubilee Hills</option>
-                </select>
-              </div>
-
-              {/* Selected Sport (read-only) */}
+              {/* Selected Sport (read-only) - now first */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Selected Sport
@@ -302,184 +285,146 @@ const Booking: React.FC = () => {
                   placeholder="Select your sport above"
                 />
               </div>
-
-              {/* Description (auto-populated) */}
-              <div className="md:col-span-2">
+              {/* Location - now second */}
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
+                  <MapPin className="inline-block w-4 h-4 mr-2" />
+                  Location
                 </label>
-                <textarea
-                  className="w-full p-3 border border-gray-300 rounded-md bg-gray-100 resize-y"
-                  value={selectedSport ? sportDescriptions[selectedSport] : ''}
-                  readOnly
-                  rows={selectedSport && sportDescriptions[selectedSport] ? Math.min(4, sportDescriptions[selectedSport].split(/\n|\. /).length) : 2}
-                  style={{ minHeight: '48px', maxHeight: '120px', overflowY: 'auto' }}
-                  placeholder="Your sport description..."
+                <select 
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
+                  value={formData.location}
+                  onChange={(e) => {
+                    if ((selectedSport === 'swimming' || selectedSport === 'gym') && e.target.value === 'hyderabad') {
+                      setFormData({...formData, location: ''});
+                      setShowFormError(true);
+                      return;
+                    }
+                    setFormData({...formData, location: e.target.value});
+                    setShowFormError(false);
+                  }}
+                  required
+                >
+                  <option value="">Select Location</option>
+                  <option value="chennai">Chennai Central</option>
+                  <option value="hyderabad" disabled={selectedSport === 'swimming' || selectedSport === 'gym'}>Hyderabad Jubilee Hills</option>
+                </select>
+                {(selectedSport === 'swimming' || selectedSport === 'gym') && formData.location === 'hyderabad' && (
+                  <span className="text-xs text-red-500">Location not available for this sport.</span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Clock className="inline-block w-4 h-4 mr-2" />
+                  Time Slot
+                </label>
+                <select 
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
+                  value={formData.time}
+                  onChange={(e) => setFormData({...formData, time: e.target.value})}
+                  required
+                >
+                  <option value="">Select Time</option>
+                  <option value="8-10">8:00 AM - 10:00 AM</option>
+                  <option value="10-12">10:00 AM - 12:00 PM</option>
+                  <option value="12-14">12:00 PM - 2:00 PM</option>
+                  <option value="14-16">2:00 PM - 4:00 PM</option>
+                  <option value="16-18">4:00 PM - 6:00 PM</option>
+                  <option value="18-20">6:00 PM - 8:00 PM</option>
+                  <option value="20-21">8:00 PM - 9:00 PM</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Clock className="inline-block w-4 h-4 mr-2" />
+                  Date
+                </label>
+                <input 
+                  type="date"
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
+                  value={formData.date}
+                  onChange={(e) => setFormData({...formData, date: e.target.value})}
+                  required
+                  min={new Date().toISOString().split('T')[0]}
                 />
               </div>
 
-              {selectedSport !== 'gym' ? (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <Clock className="inline-block w-4 h-4 mr-2" />
-                      Time Slot
-                    </label>
-                    <select 
-                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
-                      value={formData.time}
-                      onChange={(e) => setFormData({...formData, time: e.target.value})}
-                      required
-                    >
-                      <option value="">Select Time</option>
-                      <option value="8-10">8:00 AM - 10:00 AM</option>
-                      <option value="10-12">10:00 AM - 12:00 PM</option>
-                      <option value="12-14">12:00 PM - 2:00 PM</option>
-                      <option value="14-16">2:00 PM - 4:00 PM</option>
-                      <option value="16-18">4:00 PM - 6:00 PM</option>
-                      <option value="18-20">6:00 PM - 8:00 PM</option>
-                      <option value="20-21">8:00 PM - 9:00 PM</option>
-                    </select>
-                  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Users className="inline-block w-4 h-4 mr-2" />
+                  Number of Players
+                </label>
+                <input 
+                  type="number"
+                  min={(selectedSport && ['tennis','cricket','football','basketball','badminton'].includes(selectedSport)) ? 2 : 1}
+                  max={(() => {
+                    switch(selectedSport) {
+                      case 'football': return 22;
+                      case 'cricket': return 22;
+                      case 'basketball': return 10;
+                      case 'badminton': return 4;
+                      case 'tennis': return 4;
+                      case 'gym': return 15;
+                      case 'swimming': return 15;
+                      default: return 99;
+                    }
+                  })()}
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
+                  placeholder="Enter number of players"
+                  value={formData.players}
+                  onChange={(e) => setFormData({...formData, players: e.target.value})}
+                  required
+                  disabled={priceTab === 'member'}
+                />
+                {selectedSport && priceTab === 'member' && Number(formData.players) > 1 && (
+                  <p className="text-xs text-orange-600 mt-1">Membership is for a single person only. Charges applicable for non-member guest access.</p>
+                )}
+                {selectedSport && formData.players && Number(formData.players) > ((() => {
+                  switch(selectedSport) {
+                    case 'football': return 22;
+                    case 'cricket': return 22;
+                    case 'basketball': return 10;
+                    case 'badminton': return 4;
+                    case 'tennis': return 4;
+                    case 'gym': return 15;
+                    case 'swimming': return 15;
+                    default: return 99;
+                  }
+                })()) && (
+                  <p className="text-xs text-red-500 mt-1">Maximum players for {selectedSport.charAt(0).toUpperCase() + selectedSport.slice(1)} is {(() => {
+                    switch(selectedSport) {
+                      case 'football': return 22;
+                      case 'cricket': return 22;
+                      case 'basketball': return 10;
+                      case 'badminton': return 4;
+                      case 'tennis': return 4;
+                      case 'gym': return 15;
+                      case 'swimming': return 15;
+                      default: return 99;
+                    }
+                  })()}.</p>
+                )}
+              </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <Clock className="inline-block w-4 h-4 mr-2" />
-                      Date
-                    </label>
-                    <input 
-                      type="date"
-                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
-                      value={formData.date}
-                      onChange={(e) => setFormData({...formData, date: e.target.value})}
-                      required
-                      min={new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <Users className="inline-block w-4 h-4 mr-2" />
-                      Number of Players
-                    </label>
-                    <input 
-                      type="number"
-                      min={(selectedSport && ['tennis','cricket','football','basketball','badminton'].includes(selectedSport)) ? 2 : 1}
-                      max={(() => {
-                        switch(selectedSport) {
-                          case 'football': return 22;
-                          case 'cricket': return 22;
-                          case 'basketball': return 10;
-                          case 'badminton': return 4;
-                          case 'tennis': return 4;
-                          case 'gym': return 15;
-                          case 'swimming': return 15;
-                          default: return 99;
-                        }
-                      })()}
-                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
-                      placeholder="Enter number of players"
-                      value={formData.players}
-                      onChange={(e) => setFormData({...formData, players: e.target.value})}
-                      required
-                      disabled={priceTab === 'member'}
-                    />
-                    {selectedSport && priceTab === 'member' && Number(formData.players) > 1 && (
-                      <p className="text-xs text-orange-600 mt-1">Membership is for a single person only. Charges applicable for non-member guest access.</p>
-                    )}
-                    {selectedSport && formData.players && Number(formData.players) > ((() => {
-                      switch(selectedSport) {
-                        case 'football': return 22;
-                        case 'cricket': return 22;
-                        case 'basketball': return 10;
-                        case 'badminton': return 4;
-                        case 'tennis': return 4;
-                        case 'gym': return 15;
-                        case 'swimming': return 15;
-                        default: return 99;
-                      }
-                    })()) && (
-                      <p className="text-xs text-red-500 mt-1">Maximum players for {selectedSport.charAt(0).toUpperCase() + selectedSport.slice(1)} is {(() => {
-                        switch(selectedSport) {
-                          case 'football': return 22;
-                          case 'cricket': return 22;
-                          case 'basketball': return 10;
-                          case 'badminton': return 4;
-                          case 'tennis': return 4;
-                          case 'gym': return 15;
-                          case 'swimming': return 15;
-                          default: return 99;
-                        }
-                      })()}.</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <Clock className="inline-block w-4 h-4 mr-2" />
-                      Duration
-                    </label>
-                    <select 
-                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
-                      value={formData.duration}
-                      onChange={(e) => setFormData({...formData, duration: e.target.value})}
-                      required
-                    >
-                      <option value="">Select Duration</option>
-                      <option value="1">1 Hour</option>
-                      <option value="2">2 Hours</option>
-                      <option value="3">3 Hours</option>
-                      <option value="4">4 Hours</option>
-                    </select>
-                  </div>
-                </>
-              ) : (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <DollarSign className="inline-block w-4 h-4 mr-2" />
-                    Membership Duration
-                  </label>
-                  <select 
-                    className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
-                    value={formData.duration}
-                    onChange={(e) => setFormData({...formData, duration: e.target.value})}
-                    required
-                  >
-                    <option value="">Select Plan</option>
-                    <option value="daily">Daily Pass - ₹200</option>
-                    <option value="monthly">Monthly - ₹2000</option>
-                    <option value="quarterly">Quarterly - ₹5000</option>
-                    <option value="yearly">Yearly - ₹15000</option>
-                  </select>
-                </div>
-              )}
-
-              {/* Price Switch Tab */}
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Price</label>
-                <div className="flex items-center gap-4 mb-2">
-                  <button
-                    type="button"
-                    className={`px-4 py-2 rounded-l-md border border-gray-300 focus:outline-none ${priceTab === 'pay' ? 'bg-[#ff5e14] text-white' : 'bg-gray-100 text-gray-700'}`}
-                    onClick={() => setPriceTab('pay')}
-                  >
-                    Pay-per-visit
-                  </button>
-                  <button
-                    type="button"
-                    className={`px-4 py-2 rounded-r-md border border-gray-300 focus:outline-none ${priceTab === 'member' ? 'bg-[#ff5e14] text-white' : 'bg-gray-100 text-gray-700'}`}
-                    onClick={() => setPriceTab('member')}
-                  >
-                    Membership
-                  </button>
-                </div>
-                <div className="w-full p-3 border border-gray-300 rounded-md bg-gray-100 text-gray-900">
-                  {selectedSport
-                    ? priceTab === 'pay'
-                      ? nonMemberPrices[selectedSport]
-                      : memberPrices[selectedSport]
-                    : 'Select a sport to view price.'}
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Clock className="inline-block w-4 h-4 mr-2" />
+                  Duration
+                </label>
+                <select 
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
+                  value={formData.duration}
+                  onChange={(e) => setFormData({...formData, duration: e.target.value})}
+                  required
+                >
+                  <option value="">Select Duration</option>
+                  <option value="1">1 Hour</option>
+                  <option value="2">2 Hours</option>
+                  <option value="3">3 Hours</option>
+                  <option value="4">4 Hours</option>
+                </select>
               </div>
             </div>
 
@@ -594,16 +539,16 @@ const Booking: React.FC = () => {
                 type="submit"
                 style={{ fontSize: '1rem', padding: '10px 20px', background: '#22c55e', color: 'white', borderRadius: '0.375rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.5em' }}
                 className="hover:bg-green-700 transition-colors duration-300"
+                disabled={(selectedSport === 'swimming' || selectedSport === 'gym') && formData.location === 'hyderabad'}
               >
-                Confirm Booking <span style={{ fontSize: '0.75em', fontWeight: 400 }}>(Pay on spot)</span>
+                Confirm Booking
               </button>
               <button 
                 type="button"
-                className="px-8 py-3 bg-[#ff5e14] text-white font-medium rounded-md hover:bg-[#e54d00] transition-colors duration-300"
-                onClick={() => { setFormValidated(true); setShowPayModal(true); }}
-                disabled={!(formValidated && formData.name && formData.email && formData.phone && formData.location && formData.sport && formData.date && formData.time && formData.duration && (priceTab === 'member' || formData.players))}
+                className="px-8 py-3 bg-gray-400 text-white font-medium rounded-md hover:bg-gray-500 transition-colors duration-300"
+                onClick={resetAll}
               >
-                Pay
+                Clear
               </button>
             </div>
           </form>
@@ -698,14 +643,26 @@ const Booking: React.FC = () => {
           <p className="mb-2">Thank you, {formData.name}, for booking <span className="font-semibold">{selectedSport ? (selectedSport === 'swimming' ? 'Swimming Pool' : selectedSport.charAt(0).toUpperCase() + selectedSport.slice(1)) : ''}</span>.</p>
           <p className="mb-2">We have received your booking details and will contact you soon.</p>
           <p className="mb-4 text-orange-600 font-medium">Booking will be treated as Pay on Spot.</p>
+          {(selectedSport === 'swimming' || selectedSport === 'gym') && formData.location === 'hyderabad' && (
+            <div className="mt-4 mb-2 p-3 bg-red-100 border border-red-200 rounded text-red-700 text-sm">
+              Location not available for this sport.
+            </div>
+          )}
           <div className="mt-4 mb-2 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-900 text-sm">
             <strong>Note:</strong> To secure your slot, complete the online payment at the earliest — priority is given to the first successful payment. If someone else books the same slot and pays before you, your booking may be canceled, including for on-spot registrations.
           </div>
-          <button className="mt-6 px-6 py-2 bg-[#ff5e14] text-white rounded-md" onClick={() => setShowConfirmModal(false)}>Close</button>
+          <button className="mt-6 px-6 py-2 bg-[#ff5e14] text-white rounded-md mr-4" onClick={() => setShowConfirmModal(false)}>Close</button>
+          <button
+            className="mt-6 px-6 py-2 bg-green-600 text-white rounded-md"
+            onClick={() => { setShowConfirmModal(false); setShowPayModal(true); }}
+            disabled={(selectedSport === 'swimming' || selectedSport === 'gym') && formData.location === 'hyderabad'}
+          >
+            Pay
+          </button>
         </div>
       </Modal>
       {/* Payment Modal */}
-      <Modal open={showPayModal} onClose={() => { setShowPayModal(false); setPaymentStatus('idle'); }}>
+      <Modal open={showPayModal} onClose={() => setShowPayModal(false)}>
         <div className="w-full max-w-2xl mx-auto p-4" style={{ minWidth: 420, maxWidth: 600, maxHeight: '90vh', overflowY: 'auto' }}>
           <h2 className="text-2xl font-bold mb-4 text-[#2f3241] text-center">Booking Payment</h2>
           <form className="space-y-4" onSubmit={handlePayment}>
@@ -775,7 +732,6 @@ const Booking: React.FC = () => {
                 })()}</span>
               </div>
             </div>
-            
             {/* Payment Method Fields */}
             <div className="space-y-4">
               <div>
@@ -786,7 +742,6 @@ const Booking: React.FC = () => {
                   <option value="netbanking">Net Banking</option>
                 </select>
               </div>
-
               {paymentMethod === 'card' && (
                 <>
                   <div>
@@ -814,7 +769,6 @@ const Booking: React.FC = () => {
                   </div>
                 </>
               )}
-              
               {paymentMethod === 'upi' && (
                 <div className="space-y-4">
                   <div>
@@ -833,7 +787,6 @@ const Booking: React.FC = () => {
                   </div>
                 </div>
               )}
-
               {paymentMethod === 'netbanking' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Select Bank</label>
@@ -850,44 +803,24 @@ const Booking: React.FC = () => {
                 </div>
               )}
             </div>
-
             <div className="space-y-3 mt-6">
-              <button type="submit" className="w-full px-6 py-3 bg-[#ff5e14] text-white rounded-md font-semibold hover:bg-[#e54d00] transition-colors duration-300 flex items-center justify-center" disabled={loading}>
-                {loading ? <span className="loader mr-2"></span> : null} Proceed to Checkout
-              </button>
-              <button type="button" className="w-full px-6 py-3 bg-gray-200 text-gray-700 rounded-md" onClick={() => { setShowPayModal(false); setPaymentStatus('idle'); }}>Cancel</button>
+              <button type="submit" className="w-full px-6 py-3 bg-[#ff5e14] text-white rounded-md font-semibold hover:bg-[#e54d00] transition-colors duration-300">Proceed to Checkout</button>
+              <button type="button" className="w-full px-6 py-3 bg-gray-200 text-gray-700 rounded-md" onClick={() => setShowPayModal(false)}>Cancel</button>
               {paymentStatus === 'success' && <div className="text-green-600 text-center font-semibold mt-2">Payment Successful! Booking Confirmed.</div>}
               {paymentStatus === 'error' && <div className="text-red-600 text-center font-semibold mt-2">Payment Failed. Please check your details.</div>}
             </div>
           </form>
         </div>
       </Modal>
-      {/* Add a simple loader spinner style */}
-      <style>{`
-        .loader {
-          border: 3px solid #f3f3f3;
-          border-top: 3px solid #ff5e14;
-          border-radius: 50%;
-          width: 18px;
-          height: 18px;
-          animation: spin 1s linear infinite;
-          display: inline-block;
-        }
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 };
 
-// Modal component for booking confirmation and payment
 const Modal = ({ open, onClose, children }: { open: boolean, onClose: () => void, children: React.ReactNode }) => {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6 relative">
+      <div className="bg-white rounded-lg shadow-lg max-w-3xl w-full p-6 relative">
         <button className="absolute top-2 right-2 text-gray-400 hover:text-gray-700 text-2xl" onClick={onClose}>&times;</button>
         {children}
       </div>
