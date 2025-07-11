@@ -269,6 +269,33 @@ const Booking: React.FC = () => {
       {/* Booking Form */}
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8">
+          {/* Price/Membership Tab Switcher */}
+          <div className="flex justify-center mb-8">
+            <button
+              type="button"
+              className={`px-6 py-2 rounded-l-md font-semibold border border-[#ff5e14] focus:outline-none transition-colors duration-200 ${priceTab === 'pay' ? 'bg-[#ff5e14] text-white' : 'bg-white text-[#ff5e14]'}`}
+              onClick={() => setPriceTab('pay')}
+              aria-pressed={priceTab === 'pay'}
+            >
+              Pay Per Use
+            </button>
+            <button
+              type="button"
+              className={`px-6 py-2 rounded-r-md font-semibold border-t border-b border-r border-[#ff5e14] focus:outline-none transition-colors duration-200 ${priceTab === 'member' ? 'bg-[#ff5e14] text-white' : 'bg-white text-[#ff5e14]'}`}
+              onClick={() => setPriceTab('member')}
+              aria-pressed={priceTab === 'member'}
+            >
+              Membership
+            </button>
+          </div>
+          {/* Pricing Info */}
+          {selectedSport && (
+            <div className="mb-6 text-center">
+              <span className="inline-block px-4 py-2 rounded bg-gray-100 text-[#ff5e14] font-semibold text-base">
+                {priceTab === 'pay' ? nonMemberPrices[selectedSport] : memberPrices[selectedSport]}
+              </span>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Selected Sport (read-only) - now first */}
