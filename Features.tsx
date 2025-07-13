@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { useEffect, useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   MapPin,
   Clock,
@@ -18,12 +19,37 @@ import {
   Heart,
   Search,
 } from "lucide-react"
+import { supabase } from "../lib/supabase" // Import Supabase client
 
 const Features: React.FC = () => {
+  const navigate = useNavigate()
   const [isVisible, setIsVisible] = useState(false)
   const [counters, setCounters] = useState({ venues: 0, users: 0, bookings: 0, tournaments: 0 })
   const [hoveredFeature, setHoveredFeature] = useState<number | null>(null)
   const statsRef = useRef<HTMLDivElement>(null)
+
+  // State for form inputs and availability
+  const [formData, setFormData] = useState({
+    location: "",
+    sport: "",
+    date: "",
+    time_slot: "",
+  })
+  const [availabilityStatus, setAvailabilityStatus] = useState<
+    "idle" | "checking" | "available" | "not_available" | "error"
+  >("idle")
+  const [errorMessage, setErrorMessage] = useState("")
+
+  // Maximum players per sport, consistent with Booking.tsx
+  const maxPlayers: Record<string, number> = {
+    football: 22,
+    cricket: 22,
+    basketball: 10,
+    badminton: 4,
+    tennis: 4,
+    gym: 15,
+    swimming: 15,
+  }
 
   const features = [
     {
@@ -132,6 +158,91 @@ const Features: React.FC = () => {
     return `${num}${suffix}`
   }
 
+  // Handle form input changes
+  const handleInputChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
+    const { name, value } = e.target
+    setFormData((prev) => {
+      const newData = { ...prev, [name]: value }
+      // Reset sport if location changes to Hyderabad and sport is gym/swimming
+      if (name === "location" && value === "hyderabad" && (prev.sport === "gym" || prev.sport === "swimming")) {
+        return { ...newData, sport: "" }
+      }
+      return newData
+    })
+    setAvailabilityStatus("idle") // Reset status on input change
+    setErrorMessage("")
+  }
+
+  // Handle form submission to check availability
+  const handleCheckAvailability = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAvailabilityStatus("checking")
+    setErrorMessage("")
+
+    // Validate inputs
+    if (!formData.location || !formData.sport || !formData.date || !formData.time_slot) {
+      setAvailabilityStatus("error")
+      setErrorMessage("Please fill in all fields.")
+      return
+    }
+
+    // Current date and time in IST
+    const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    const currentDate = new Date(now).toISOString().split("T")[0]
+    const currentTime = new Date(now).getHours() + new Date(now).getMinutes() / 60
+
+    // Parse time slot (e.g., "8-10" -> [8, 10])
+    const [startHour] = formData.time_slot.split("-").map(Number)
+    const isToday = formData.date === currentDate
+
+    // Validate date and time slot
+    if (isToday && startHour < Math.ceil(currentTime)) {
+      setAvailabilityStatus("error")
+      setErrorMessage("Selected time slot has already passed today. Please choose a future slot.")
+      return
+    }
+
+    try {
+      // Query Supabase bookings table with limit for efficiency
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("players")
+        .eq("location", formData.location)
+        .eq("sport", formData.sport)
+        .eq("date", formData.date)
+        .eq("time_slot", formData.time_slot)
+        .limit(100) // Limit to avoid large result sets
+
+      if (error) {
+        console.error("Error checking availability:", error.message)
+        setAvailabilityStatus("error")
+        setErrorMessage(`Failed to check availability: ${error.message}. Please try again.`)
+        return
+      }
+
+      // Calculate total players booked
+      const totalPlayers = data?.reduce((sum, booking) => sum + (booking.players || 0), 0) || 0
+      const maxAllowed = maxPlayers[formData.sport] || 99
+
+      // Check if slot is available based on player capacity
+      if (totalPlayers >= maxAllowed) {
+        setAvailabilityStatus("not_available")
+      } else {
+        setAvailabilityStatus("available")
+        // Delay redirect for better UX and allow user to see the message
+        setTimeout(() => {
+          navigate(
+            `/booking?location=${formData.location}&sport=${formData.sport}&date=${formData.date}&time=${formData.time_slot}`,
+          )
+        }, 1500) // 1.5-second delay
+      }
+    } catch (err) {
+      console.error("Unexpected error:", err)
+      setAvailabilityStatus("error")
+      setErrorMessage("An unexpected error occurred. Please try again later.")
+    }
+  }
+
   return (
     <div id="features" className="relative overflow-hidden">
       {/* Animated Background Elements */}
@@ -161,22 +272,17 @@ const Features: React.FC = () => {
                 key={index}
                 className="text-center group cursor-pointer transform hover:scale-110 transition-all duration-500 relative"
               >
-                {/* Glow Effect */}
                 <div className="absolute inset-0 bg-gradient-to-r from-[#ff5e14]/20 to-transparent rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 scale-125"></div>
-
                 <div className="relative bg-white/50 backdrop-blur-sm rounded-2xl p-6 border border-white/60 shadow-lg group-hover:shadow-xl transition-all duration-500">
                   <div className="flex justify-center mb-4">
                     <div className="p-3 bg-gradient-to-r from-[#ff5e14] to-[#e54d00] rounded-full text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
                       {stat.icon}
                     </div>
                   </div>
-
                   <div className="counter text-4xl font-bold text-[#2f3241] mb-2 bg-gradient-to-r from-[#2f3241] to-[#ff5e14] bg-clip-text text-transparent">
                     {formatNumber(counters[stat.key as keyof typeof counters], stat.suffix)}
                   </div>
-
                   <p className="text-gray-700 font-semibold text-sm uppercase tracking-wide">{stat.label}</p>
-
                   <div className="w-full h-1 bg-gradient-to-r from-[#ff5e14] to-[#e54d00] mx-auto mt-3 rounded-full transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500"></div>
                 </div>
               </div>
@@ -188,7 +294,6 @@ const Features: React.FC = () => {
       {/* Enhanced Features Section */}
       <section className="py-24 bg-gradient-to-br from-gray-50 via-white to-gray-100 relative">
         <div className="absolute inset-0 bg-gradient-to-r from-[#ff5e14]/5 to-transparent"></div>
-
         <div className="container mx-auto px-4 relative z-10">
           <div className="text-center mb-16">
             <div className="relative inline-block">
@@ -210,7 +315,6 @@ const Features: React.FC = () => {
               the competition.
             </p>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((feature, index) => (
               <div
@@ -219,19 +323,14 @@ const Features: React.FC = () => {
                 onMouseEnter={() => setHoveredFeature(index)}
                 onMouseLeave={() => setHoveredFeature(null)}
               >
-                {/* Animated Background Pattern */}
                 <div className="absolute inset-0 opacity-5 text-6xl flex items-center justify-center pointer-events-none">
                   <span className="transform rotate-12 group-hover:rotate-45 transition-transform duration-700">
                     {feature.bgPattern}
                   </span>
                 </div>
-
-                {/* Gradient Overlay */}
                 <div
                   className={`absolute inset-0 bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-700 rounded-3xl`}
                 ></div>
-
-                {/* Floating Particles */}
                 <div className="absolute inset-0 overflow-hidden rounded-3xl">
                   {hoveredFeature === index && (
                     <>
@@ -250,7 +349,6 @@ const Features: React.FC = () => {
                     </>
                   )}
                 </div>
-
                 <div className="relative z-10">
                   <div className="relative mb-6">
                     <div
@@ -260,7 +358,6 @@ const Features: React.FC = () => {
                     </div>
                     <div className="absolute -top-2 -right-2 w-6 h-6 bg-[#ff5e14] rounded-full opacity-0 group-hover:opacity-100 transition-all duration-500 animate-ping"></div>
                   </div>
-
                   <h3 className="text-xl font-bold mb-4 text-[#2f3241] group-hover:text-[#ff5e14] transition-colors duration-500">
                     {feature.title}
                   </h3>
@@ -268,11 +365,7 @@ const Features: React.FC = () => {
                     {feature.description}
                   </p>
                 </div>
-
-                {/* Animated Border */}
                 <div className="absolute inset-0 rounded-3xl border-2 border-[#ff5e14] opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-
-                {/* Bottom Accent */}
                 <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-[#ff5e14] to-[#e54d00] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left rounded-full"></div>
               </div>
             ))}
@@ -282,15 +375,12 @@ const Features: React.FC = () => {
 
       {/* Enhanced Quick Booking Section */}
       <section className="py-20 bg-gradient-to-br from-gray-100 to-white relative overflow-hidden">
-        {/* Background Elements */}
         <div className="absolute inset-0">
           <div className="absolute top-10 left-10 w-40 h-40 bg-[#ff5e14]/10 rounded-full blur-3xl animate-pulse"></div>
           <div className="absolute bottom-10 right-10 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
         </div>
-
         <div className="container mx-auto px-4 relative z-10">
           <div className="relative bg-gradient-to-br from-[#1a1d29] via-[#2f3241] to-[#1a1d29] p-12 rounded-3xl shadow-2xl overflow-hidden">
-            {/* Animated Grid Pattern */}
             <div className="absolute inset-0 opacity-5">
               <div
                 className="absolute inset-0"
@@ -299,8 +389,6 @@ const Features: React.FC = () => {
                 }}
               ></div>
             </div>
-
-            {/* Floating Icons */}
             <div className="absolute inset-0 overflow-hidden">
               <div className="absolute top-10 left-10 text-[#ff5e14] opacity-20 animate-bounce">
                 <Star size={24} />
@@ -312,7 +400,6 @@ const Features: React.FC = () => {
                 <Zap size={18} />
               </div>
             </div>
-
             <div className="relative z-10">
               <div className="text-center mb-12">
                 <div className="inline-block bg-[#ff5e14]/20 backdrop-blur-sm px-6 py-3 rounded-full border border-[#ff5e14]/30 mb-4">
@@ -325,57 +412,79 @@ const Features: React.FC = () => {
                   Reserve Your <span className="text-[#ff5e14]">Perfect</span> Slot
                 </h3>
                 <p className="text-gray-300 text-lg max-w-2xl mx-auto">
-                  Book your ideal sports session in seconds with our streamlined booking system
+                  Check availability for your ideal sports session in seconds with our streamlined system
                 </p>
               </div>
-
-              {/* Enhanced Booking Form */}
-              <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" onSubmit={handleCheckAvailability}>
                 <div className="group relative">
                   <label className="block text-white text-sm font-medium mb-3 flex items-center">
                     <MapPin size={16} className="mr-2 text-[#ff5e14]" /> Location
                   </label>
-                  <select className="w-full p-4 rounded-2xl border-0 bg-white/95 backdrop-blur-sm shadow-lg focus:shadow-xl transition-shadow duration-300 focus:ring-2 focus:ring-[#ff5e14] outline-none">
+                  <select
+                    name="location"
+                    className="w-full p-4 rounded-2xl border-0 bg-white/95 backdrop-blur-sm shadow-lg focus:shadow-xl transition-shadow duration-300 focus:ring-2 focus:ring-[#ff5e14] outline-none"
+                    value={formData.location}
+                    onChange={handleInputChange}
+                    required
+                  >
                     <option value="">Select Location</option>
                     <option value="chennai">Chennai Central</option>
                     <option value="hyderabad">Hyderabad Jubilee Hills</option>
                   </select>
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#ff5e14]/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                 </div>
-
                 <div className="group relative">
                   <label className="block text-white text-sm font-medium mb-3 flex items-center">
                     <User size={16} className="mr-2 text-[#ff5e14]" /> Sport
                   </label>
-                  <select className="w-full p-4 rounded-2xl border-0 bg-white/95 backdrop-blur-sm shadow-lg focus:shadow-xl transition-shadow duration-300 focus:ring-2 focus:ring-[#ff5e14] outline-none">
+                  <select
+                    name="sport"
+                    className="w-full p-4 rounded-2xl border-0 bg-white/95 backdrop-blur-sm shadow-lg focus:shadow-xl transition-shadow duration-300 focus:ring-2 focus:ring-[#ff5e14] outline-none"
+                    value={formData.sport}
+                    onChange={handleInputChange}
+                    required
+                  >
                     <option value="">Select Sport</option>
                     <option value="football">⚽ Football</option>
                     <option value="cricket">🏏 Cricket</option>
                     <option value="basketball">🏀 Basketball</option>
                     <option value="badminton">🏸 Badminton</option>
                     <option value="tennis">🎾 Tennis</option>
-                    <option value="gym"> 🏋️‍♂️ Gymnasium </option>
-                    <option value="swimming pool">🏊‍♂️ Swimming Pool</option>
+                    <option value="gym" disabled={formData.location === "hyderabad"}>
+                      🏋️‍♂️ Gym
+                    </option>
+                    <option value="swimming" disabled={formData.location === "hyderabad"}>
+                      🏊‍♂️ Swimming Pool
+                    </option>
                   </select>
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#ff5e14]/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                 </div>
-
                 <div className="group relative">
                   <label className="block text-white text-sm font-medium mb-3 flex items-center">
                     <Calendar size={16} className="mr-2 text-[#ff5e14]" /> Date
                   </label>
                   <input
                     type="date"
+                    name="date"
                     className="w-full p-4 rounded-2xl border-0 bg-white/95 backdrop-blur-sm shadow-lg focus:shadow-xl transition-shadow duration-300 focus:ring-2 focus:ring-[#ff5e14] outline-none"
+                    value={formData.date}
+                    onChange={handleInputChange}
+                    required
+                    min={new Date().toISOString().split("T")[0]}
                   />
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#ff5e14]/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                 </div>
-
                 <div className="group relative">
                   <label className="block text-white text-sm font-medium mb-3 flex items-center">
                     <Timer size={16} className="mr-2 text-[#ff5e14]" /> Time Slot
                   </label>
-                  <select className="w-full p-4 rounded-2xl border-0 bg-white/95 backdrop-blur-sm shadow-lg focus:shadow-xl transition-shadow duration-300 focus:ring-2 focus:ring-[#ff5e14] outline-none">
+                  <select
+                    name="time_slot"
+                    className="w-full p-4 rounded-2xl border-0 bg-white/95 backdrop-blur-sm shadow-lg focus:shadow-xl transition-shadow duration-300 focus:ring-2 focus:ring-[#ff5e14] outline-none"
+                    value={formData.time_slot}
+                    onChange={handleInputChange}
+                    required
+                  >
                     <option value="">Select Time</option>
                     <option value="8-10">🌅 8:00 AM - 10:00 AM</option>
                     <option value="10-12">☀️ 10:00 AM - 12:00 PM</option>
@@ -383,30 +492,44 @@ const Features: React.FC = () => {
                     <option value="14-16">⛅ 2:00 PM - 4:00 PM</option>
                     <option value="16-18">🌆 4:00 PM - 6:00 PM</option>
                     <option value="18-20">🌇 6:00 PM - 8:00 PM</option>
-                    <option value="20-22">🌃 8:00 PM - 9:00 PM</option>
+                    <option value="20-21">🌃 8:00 PM - 9:00 PM</option>
                   </select>
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#ff5e14]/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                 </div>
-
                 <div className="lg:col-span-4 text-center mt-8">
                   <button
                     type="submit"
                     className="group relative inline-flex items-center justify-center bg-gradient-to-r from-[#ff5e14] to-[#e54d00] text-white py-4 px-12 rounded-2xl font-semibold text-lg shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:from-[#e54d00] hover:to-[#ff5e14]"
+                    disabled={availabilityStatus === "checking"}
                   >
                     <span className="relative z-10 flex items-center">
                       <Search size={20} className="mr-2" />
-                      Check Availability
+                      {availabilityStatus === "checking" ? "Checking..." : "Check Availability"}
                     </span>
                     <div className="absolute inset-0 bg-gradient-to-r from-[#ff5e14] to-[#e54d00] rounded-2xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity duration-300"></div>
                   </button>
                 </div>
               </form>
+              {availabilityStatus === "available" && (
+                <div className="mt-6 text-center p-4 bg-green-100 text-green-700 rounded-lg">
+                  🎉 Slot is <strong>Available</strong>! Redirecting to booking page in 1.5 seconds...
+                </div>
+              )}
+              {availabilityStatus === "not_available" && (
+                <div className="mt-6 text-center p-4 bg-red-100 text-red-700 rounded-lg">
+                  ❌ Slot is <strong>Not Available</strong>. Maximum capacity of {maxPlayers[formData.sport] || 99}{" "}
+                  players reached. Please choose a different time or date.
+                </div>
+              )}
+              {availabilityStatus === "error" && (
+                <div className="mt-6 text-center p-4 bg-yellow-100 text-yellow-700 rounded-lg">⚠️ {errorMessage}</div>
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      <style jsx>{`
+      <style>{`
         @keyframes float {
           0%, 100% { transform: translateY(0px); }
           50% { transform: translateY(-20px); }
