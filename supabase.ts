@@ -16,6 +16,22 @@ export interface NewsletterSubscriber {
   created_at: string
 }
 
+export interface Booking {
+  id: string
+  booking_type: string
+  created_at: string
+  sport: string
+  location: string
+  time_slot: string
+  date: string
+  players: number
+  duration: number
+  name: string
+  email: string
+  phone: string
+  total_amount: number
+}
+
 // Database type definitions
 export type Database = {
   public: {
@@ -35,6 +51,53 @@ export type Database = {
           id?: string
           email?: string
           created_at?: string
+        }
+      }
+      bookings: {
+        Row: {
+          id: string
+          booking_type: string
+          created_at: string
+          sport: string
+          location: string
+          time_slot: string
+          date: string
+          players: number
+          duration: number
+          name: string
+          email: string
+          phone: string
+          total_amount: number
+        }
+        Insert: {
+          id?: string
+          booking_type: string
+          created_at?: string
+          sport: string
+          location: string
+          time_slot: string
+          date: string
+          players: number
+          duration: number
+          name: string
+          email: string
+          phone: string
+          total_amount: number
+        }
+        Update: {
+          id?: string
+          booking_type?: string
+          created_at?: string
+          sport?: string
+          location?: string
+          time_slot?: string
+          date?: string
+          players?: number
+          duration?: number
+          name?: string
+          email?: string
+          phone?: string
+          total_amount?: number
         }
       }
     }
