@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useEffect, useRef, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import {
   MapPin,
   Clock,
@@ -19,14 +19,25 @@ import {
   Heart,
   Search,
 } from "lucide-react"
-import { supabase } from "../lib/supabase" // Import Supabase client
+import { supabase } from "../lib/supabase"
 
 const Features: React.FC = () => {
-  const navigate = useNavigate()
-  const [isVisible, setIsVisible] = useState(false)
-  const [counters, setCounters] = useState({ venues: 0, users: 0, bookings: 0, tournaments: 0 })
-  const [hoveredFeature, setHoveredFeature] = useState<number | null>(null)
-  const statsRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [isVisible, setIsVisible] = useState(false);
+  const [counters, setCounters] = useState({ venues: 0, users: 0, bookings: 0, tournaments: 0 });
+  const [hoveredFeature, setHoveredFeature] = useState<number | null>(null);
+  const statsRef = useRef<HTMLDivElement>(null);
+  const quickBookingRef = useRef<HTMLElement>(null);
+
+  // Handle scrolling when navigated with scrollToQuickBooking state
+  useEffect(() => {
+    if (location.state?.scrollToQuickBooking && quickBookingRef.current) {
+      quickBookingRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Clear the state to prevent repeated scrolling
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, navigate]);
 
   // State for form inputs and availability
   const [formData, setFormData] = useState({
@@ -34,11 +45,11 @@ const Features: React.FC = () => {
     sport: "",
     date: "",
     time_slot: "",
-  })
+  });
   const [availabilityStatus, setAvailabilityStatus] = useState<
     "idle" | "checking" | "available" | "not_available" | "error"
-  >("idle")
-  const [errorMessage, setErrorMessage] = useState("")
+  >("idle");
+  const [errorMessage, setErrorMessage] = useState("");
 
   // Maximum players per sport, consistent with Booking.tsx
   const maxPlayers: Record<string, number> = {
@@ -49,7 +60,7 @@ const Features: React.FC = () => {
     tennis: 4,
     gym: 15,
     swimming: 15,
-  }
+  };
 
   const features = [
     {
@@ -100,110 +111,102 @@ const Features: React.FC = () => {
       hoverColor: "hover:from-yellow-600 hover:to-yellow-700",
       bgPattern: "🎧",
     },
-  ]
+  ];
 
   const stats = [
     { number: 2, label: "Venues", suffix: "", key: "venues", icon: <MapPin size={20} /> },
     { number: 700, label: "Happy Users", suffix: "K+", key: "users", icon: <Heart size={20} /> },
     { number: 2500, label: "Bookings", suffix: "K+", key: "bookings", icon: <Calendar size={20} /> },
     { number: 20, label: "Tournaments", suffix: "+", key: "tournaments", icon: <Trophy size={20} /> },
-  ]
+  ];
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !isVisible) {
-          setIsVisible(true)
-          animateCounters()
+          setIsVisible(true);
+          animateCounters();
         }
       },
       { threshold: 0.3 },
-    )
+    );
 
     if (statsRef.current) {
-      observer.observe(statsRef.current)
+      observer.observe(statsRef.current);
     }
 
-    return () => observer.disconnect()
-  }, [isVisible])
+    return () => observer.disconnect();
+  }, [isVisible]);
 
   const animateCounters = () => {
-    const duration = 2500
-    const steps = 80
-    const stepDuration = duration / steps
+    const duration = 2500;
+    const steps = 80;
+    const stepDuration = duration / steps;
 
     stats.forEach((stat) => {
-      let current = 0
-      const increment = stat.number / steps
+      let current = 0;
+      const increment = stat.number / steps;
 
       const timer = setInterval(() => {
-        current += increment
+        current += increment;
         if (current >= stat.number) {
-          current = stat.number
-          clearInterval(timer)
+          current = stat.number;
+          clearInterval(timer);
         }
 
         setCounters((prev) => ({
           ...prev,
           [stat.key]: Math.floor(current),
-        }))
-      }, stepDuration)
-    })
-  }
+        }));
+      }, stepDuration);
+    });
+  };
 
   const formatNumber = (num: number, suffix: string) => {
     if (suffix === "K+") {
-      return `${(num / 1000).toFixed(num >= 1000 ? 0 : 1)}K+`
+      return `${(num / 1000).toFixed(num >= 1000 ? 0 : 1)}K+`;
     }
-    return `${num}${suffix}`
-  }
+    return `${num}${suffix}`;
+  };
 
-  // Handle form input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
-    const { name, value } = e.target
+    const { name, value } = e.target;
     setFormData((prev) => {
-      const newData = { ...prev, [name]: value }
-      // Reset sport if location changes to Hyderabad and sport is gym/swimming
+      const newData = { ...prev, [name]: value };
       if (name === "location" && value === "hyderabad" && (prev.sport === "gym" || prev.sport === "swimming")) {
-        return { ...newData, sport: "" }
+        return { ...newData, sport: "" };
       }
-      return newData
-    })
-    setAvailabilityStatus("idle") // Reset status on input change
-    setErrorMessage("")
-  }
+      return newData;
+    });
+    setAvailabilityStatus("idle");
+    setErrorMessage("");
+  };
 
-  // Handle form submission to check availability
   const handleCheckAvailability = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setAvailabilityStatus("checking")
-    setErrorMessage("")
+    e.preventDefault();
+    setAvailabilityStatus("checking");
+    setErrorMessage("");
 
-    // Validate inputs
     if (!formData.location || !formData.sport || !formData.date || !formData.time_slot) {
-      setAvailabilityStatus("error")
-      setErrorMessage("Please fill in all fields.")
-      return
+      setAvailabilityStatus("error");
+      setErrorMessage("Please fill in all fields.");
+      return;
     }
 
-    // Current date and time in IST
-    const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-    const currentDate = new Date(now).toISOString().split("T")[0]
-    const currentTime = new Date(now).getHours() + new Date(now).getMinutes() / 60
+    const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+    const currentDate = new Date(now).toISOString().split("T")[0];
+    const currentTime = new Date(now).getHours() + new Date(now).getMinutes() / 60;
 
-    // Parse time slot (e.g., "8-10" -> [8, 10])
-    const [startHour] = formData.time_slot.split("-").map(Number)
-    const isToday = formData.date === currentDate
+    const [startHour] = formData.time_slot.split("-").map(Number);
+    const isToday = formData.date === currentDate;
 
-    // Validate date and time slot
     if (isToday && startHour < Math.ceil(currentTime)) {
-      setAvailabilityStatus("error")
-      setErrorMessage("Selected time slot has already passed today. Please choose a future slot.")
-      return
+      setAvailabilityStatus("error");
+      setErrorMessage("Selected time slot has already passed today. Please choose a future slot.");
+      return;
     }
 
     try {
-      // Query Supabase bookings table with limit for efficiency
       const { data, error } = await supabase
         .from("bookings")
         .select("players")
@@ -211,41 +214,37 @@ const Features: React.FC = () => {
         .eq("sport", formData.sport)
         .eq("date", formData.date)
         .eq("time_slot", formData.time_slot)
-        .limit(100) // Limit to avoid large result sets
+        .limit(100);
 
       if (error) {
-        console.error("Error checking availability:", error.message)
-        setAvailabilityStatus("error")
-        setErrorMessage(`Failed to check availability: ${error.message}. Please try again.`)
-        return
+        console.error("Error checking availability:", error.message);
+        setAvailabilityStatus("error");
+        setErrorMessage(`Failed to check availability: ${error.message}. Please try again.`);
+        return;
       }
 
-      // Calculate total players booked
-      const totalPlayers = data?.reduce((sum, booking) => sum + (booking.players || 0), 0) || 0
-      const maxAllowed = maxPlayers[formData.sport] || 99
+      const totalPlayers = data?.reduce((sum, booking) => sum + (booking.players || 0), 0) || 0;
+      const maxAllowed = maxPlayers[formData.sport] || 99;
 
-      // Check if slot is available based on player capacity
       if (totalPlayers >= maxAllowed) {
-        setAvailabilityStatus("not_available")
+        setAvailabilityStatus("not_available");
       } else {
-        setAvailabilityStatus("available")
-        // Delay redirect for better UX and allow user to see the message
+        setAvailabilityStatus("available");
         setTimeout(() => {
           navigate(
             `/booking?location=${formData.location}&sport=${formData.sport}&date=${formData.date}&time=${formData.time_slot}`,
-          )
-        }, 1500) // 1.5-second delay
+          );
+        }, 1500);
       }
     } catch (err) {
-      console.error("Unexpected error:", err)
-      setAvailabilityStatus("error")
-      setErrorMessage("An unexpected error occurred. Please try again later.")
+      console.error("Unexpected error:", err);
+      setAvailabilityStatus("error");
+      setErrorMessage("An unexpected error occurred. Please try again later.");
     }
-  }
+  };
 
   return (
     <div id="features" className="relative overflow-hidden">
-      {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-32 h-32 bg-gradient-to-br from-[#ff5e14]/20 to-transparent rounded-full blur-2xl animate-pulse"></div>
         <div className="absolute top-40 right-20 w-24 h-24 bg-gradient-to-br from-blue-500/20 to-transparent rounded-full blur-2xl animate-pulse delay-1000"></div>
@@ -253,19 +252,16 @@ const Features: React.FC = () => {
         <div className="absolute top-1/2 right-1/4 w-28 h-28 bg-gradient-to-br from-green-500/20 to-transparent rounded-full blur-2xl animate-pulse delay-3000"></div>
       </div>
 
-      {/* Enhanced Stats Section */}
       <div
         ref={statsRef}
         className="bg-gradient-to-br from-white via-gray-50 to-white py-16 relative z-10 -mt-16 rounded-3xl shadow-2xl max-w-6xl mx-auto px-8 border border-gray-200 backdrop-blur-sm"
       >
         <div className="absolute inset-0 bg-gradient-to-r from-[#ff5e14]/5 to-transparent rounded-3xl"></div>
-
         <div className="relative z-10">
           <div className="text-center mb-12">
             <h3 className="text-2xl font-bold text-[#2f3241] mb-2">Our Impact</h3>
             <div className="w-16 h-1 bg-gradient-to-r from-[#ff5e14] to-[#e54d00] mx-auto"></div>
           </div>
-
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {stats.map((stat, index) => (
               <div
@@ -291,7 +287,6 @@ const Features: React.FC = () => {
         </div>
       </div>
 
-      {/* Enhanced Features Section */}
       <section className="py-24 bg-gradient-to-br from-gray-50 via-white to-gray-100 relative">
         <div className="absolute inset-0 bg-gradient-to-r from-[#ff5e14]/5 to-transparent"></div>
         <div className="container mx-auto px-4 relative z-10">
@@ -373,8 +368,7 @@ const Features: React.FC = () => {
         </div>
       </section>
 
-      {/* Enhanced Quick Booking Section */}
-      <section className="py-20 bg-gradient-to-br from-gray-100 to-white relative overflow-hidden">
+      <section id="quick-booking" ref={quickBookingRef} className="py-20 bg-gradient-to-br from-gray-100 to-white relative overflow-hidden">
         <div className="absolute inset-0">
           <div className="absolute top-10 left-10 w-40 h-40 bg-[#ff5e14]/10 rounded-full blur-3xl animate-pulse"></div>
           <div className="absolute bottom-10 right-10 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
@@ -488,55 +482,46 @@ const Features: React.FC = () => {
                     <option value="">Select Time</option>
                     <option value="8-10">🌅 8:00 AM - 10:00 AM</option>
                     <option value="10-12">☀️ 10:00 AM - 12:00 PM</option>
-                    <option value="12-14">🌤️ 12:00 PM - 2:00 PM</option>
-                    <option value="14-16">⛅ 2:00 PM - 4:00 PM</option>
-                    <option value="16-18">🌆 4:00 PM - 6:00 PM</option>
-                    <option value="18-20">🌇 6:00 PM - 8:00 PM</option>
-                    <option value="20-21">🌃 8:00 PM - 9:00 PM</option>
+                    <option value="12-14">☀️ 12:00 PM - 2:00 PM</option>
+                    <option value="14-16">🌞 2:00 PM - 4:00 PM</option>
+                    <option value="16-18">🌄 4:00 PM - 6:00 PM</option>
+                    <option value="18-20">🌆 6:00 PM - 8:00 PM</option>
+                    <option value="20-21">🌙 8:00 PM - 9:00 PM</option>
                   </select>
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#ff5e14]/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                 </div>
-                <div className="lg:col-span-4 text-center mt-8">
+                <div className="lg:col-span-4 flex justify-center mt-6">
                   <button
                     type="submit"
-                    className="group relative inline-flex items-center justify-center bg-gradient-to-r from-[#ff5e14] to-[#e54d00] text-white py-4 px-12 rounded-2xl font-semibold text-lg shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:from-[#e54d00] hover:to-[#ff5e14]"
+                    className="flex items-center px-8 py-4 bg-gradient-to-r from-[#ff5e14] to-[#e54d00] text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl hover:from-[#e54d00] hover:to-[#ff5e14] transition-all duration-300 transform hover:-translate-y-1"
                     disabled={availabilityStatus === "checking"}
                   >
-                    <span className="relative z-10 flex items-center">
-                      <Search size={20} className="mr-2" />
-                      {availabilityStatus === "checking" ? "Checking..." : "Check Availability"}
-                    </span>
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#ff5e14] to-[#e54d00] rounded-2xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity duration-300"></div>
+                    <Search size={18} className="mr-2" />
+                    {availabilityStatus === "checking" ? "Checking..." : "Check Availability"}
                   </button>
                 </div>
               </form>
               {availabilityStatus === "available" && (
-                <div className="mt-6 text-center p-4 bg-green-100 text-green-700 rounded-lg">
-                  🎉 Slot is <strong>Available</strong>! Redirecting to booking page in 1.5 seconds...
+                <div className="mt-6 text-center text-green-400 bg-green-900/20 p-4 rounded-2xl border border-green-400/30">
+                  Slot is available! Redirecting to booking page...
                 </div>
               )}
               {availabilityStatus === "not_available" && (
-                <div className="mt-6 text-center p-4 bg-red-100 text-red-700 rounded-lg">
-                  ❌ Slot is <strong>Not Available</strong>. Maximum capacity of {maxPlayers[formData.sport] || 99}{" "}
-                  players reached. Please choose a different time or date.
+                <div className="mt-6 text-center text-red-400 bg-red-900/20 p-4 rounded-2xl border border-red-400/30">
+                  Sorry, this slot is fully booked. Please try a different time or date.
                 </div>
               )}
               {availabilityStatus === "error" && (
-                <div className="mt-6 text-center p-4 bg-yellow-100 text-yellow-700 rounded-lg">⚠️ {errorMessage}</div>
+                <div className="mt-6 text-center text-red-400 bg-red-900/20 p-4 rounded-2xl border border-red-400/30">
+                  {errorMessage}
+                </div>
               )}
             </div>
           </div>
         </div>
       </section>
-
-      <style>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-20px); }
-        }
-      `}</style>
     </div>
-  )
-}
+  );
+};
 
-export default Features
+export default Features;
