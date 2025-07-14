@@ -98,12 +98,37 @@ const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
                     <span className="text-gray-700">{event.details.duration}</span>
                   </div>
                 )}
-                {event.details?.price && (
-                  <div className="flex items-center">
-                    <DollarSign className="text-[#ff5e14] w-5 h-5 mr-2" />
-                    <span className="text-gray-700">{event.details.price}</span>
-                  </div>
-                )}
+                {/* Show event fee based on sport/duration, max ₹500 */}
+                <div className="flex items-center">
+                  <DollarSign className="text-[#ff5e14] w-5 h-5 mr-2" />
+                  <span className="text-gray-700">
+                    {(() => {
+                      // Fee logic (match Events.tsx)
+                      const participantFees: Record<string, number> = {
+                        football: 400,
+                        cricket: 500,
+                        basketball: 350,
+                        badminton: 200,
+                        tennis: 200,
+                        gym: 150,
+                        swimming: 150,
+                        default: 300,
+                      };
+                      const name = event.title || '';
+                      if (/charity run/i.test(name)) return 'Free';
+                      let sport = 'default';
+                      if (/cricket/i.test(name)) sport = 'cricket';
+                      else if (/football/i.test(name)) sport = 'football';
+                      else if (/basketball/i.test(name)) sport = 'basketball';
+                      else if (/badminton/i.test(name)) sport = 'badminton';
+                      else if (/tennis/i.test(name)) sport = 'tennis';
+                      else if (/gym/i.test(name)) sport = 'gym';
+                      else if (/swimming/i.test(name)) sport = 'swimming';
+                      const fee = participantFees[sport] || participantFees.default;
+                      return `₹${Math.min(fee, 500)}`;
+                    })()}
+                  </span>
+                </div>
               </div>
               
               <div>
