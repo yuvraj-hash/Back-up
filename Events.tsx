@@ -7,6 +7,7 @@ import QRCode from "qrcode"
 import { Calendar, MapPin, Filter, ChevronRight, Download, X } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import EventDetailsModal from "../components/modals/EventDetailsModal"
+import { supabase, insertRegistration } from "../lib/supabase"; // Import the Supabase client and function
 
 // Define Event interface for type safety
 interface Event {
@@ -43,29 +44,29 @@ const Events: React.FC = () => {
   const [registrationId, setRegistrationId] = useState<string | null>(null)
   const [seatNumbers, setSeatNumbers] = useState<number[]>([])
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [activeFilter, setActiveFilter] = useState<string>("all")
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
-  // Tab state: "participants" or "spectators"
   const [bookingTab, setBookingTab] = useState<'participants' | 'spectators'>("participants")
   const [bookingFormData, setBookingFormData] = useState({
-    eventName: "",
-    participantName: "",
+    event_name: "",
+    name: "",
     email: "",
     phone: "",
-    participants: "",
-    specialRequirements: "",
+    number: "",
+    special_requirements: "",
+    seat_numbers: "",
+    type: "participant" as "participant" | "spectator",
   })
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
   const [emailError, setEmailError] = useState("")
   const [phoneError, setPhoneError] = useState("")
 
-  // Booking limits
   const PARTICIPANT_LIMIT = 15
   const SPECTATOR_LIMIT = 50
 
-  // Fee logic for participants (by sport/duration, max ₹500)
   const participantFees: Record<string, number> = {
     football: 400,
     cricket: 500,
@@ -74,11 +75,9 @@ const Events: React.FC = () => {
     tennis: 200,
     gym: 150,
     swimming: 150,
-    // fallback
     default: 300,
   }
 
-  // Returns price string for the current booking tab
   const getEventPrice = (eventName: string, participants: string) => {
     if (!eventName) return ""
     if (bookingTab === "spectators") {
@@ -86,9 +85,7 @@ const Events: React.FC = () => {
       if (!isNaN(num) && num > 0) return `₹${num * 100}`
       return "₹100"
     }
-    // Participants
     if (eventName === "Charity Run for Education") return "Free"
-    // Guess sport from event name
     let sport = "default"
     if (/cricket/i.test(eventName)) sport = "cricket"
     else if (/football/i.test(eventName)) sport = "football"
@@ -114,7 +111,6 @@ const Events: React.FC = () => {
   const MAX_SEATS = 50
 
   const eventsData: Event[] = [
-    // Updated event dates and registrationOpen based on current date (July 14, 2025)
     {
       id: 1,
       title: "Chennai Corporate Cricket League",
@@ -194,7 +190,7 @@ const Events: React.FC = () => {
         "https://images.pexels.com/photos/47730/the-ball-stadion-football-the-pitch-47730.jpeg?auto=compress&cs=tinysrgb&w=600",
       description: "Join our weekend 5-a-side knockouts with a final match on day two.",
       category: "tournament",
-      registrationOpen: false, // Past event, registration closed
+      registrationOpen: false,
       featured: false,
       details: {
         capacity: "16 teams (7 players per team)",
@@ -298,105 +294,142 @@ const Events: React.FC = () => {
     return /^(?:\+91[-\s]?|91[-\s]?|0)?[6-9]\d{9}$/.test(phone)
   }
 
-  const handleBookingSubmit = (e: React.FormEvent) => {
+  const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setEmailError("")
     setPhoneError("")
+    setIsSubmitting(true)
+    
     let valid = true
+    
+    // Validate email
     if (!validateEmail(bookingFormData.email)) {
       setEmailError("Please enter a valid email address (gmail, yahoo, outlook, hotmail, icloud, protonmail only).")
       valid = false
     }
+    
+    // Validate phone
     if (!validatePhone(bookingFormData.phone)) {
       setPhoneError("Please enter a valid Indian phone number.")
       valid = false
     }
-    const numParticipants = Number.parseInt(bookingFormData.participants, 10)
-    if (!valid) return
-
-    // Booking logic for tabs
-    if (bookingTab === "participants") {
-      // Limit: 15 per sport
-      const key = `participants_${bookingFormData.eventName}`
-      const taken = parseInt(localStorage.getItem(key) || "0", 10)
-      if (taken + numParticipants > PARTICIPANT_LIMIT) {
-        setPhoneError("Booking Closed: Participant limit reached.")
-        return
-      }
-      localStorage.setItem(key, (taken + numParticipants).toString())
-    } else {
-      // Spectators: 50 overall
-      const key = `spectators_total`
-      const taken = parseInt(localStorage.getItem(key) || "0", 10)
-      if (taken + numParticipants > SPECTATOR_LIMIT) {
-        setPhoneError("Booking Closed: Spectator limit reached.")
-        return
-      }
-      localStorage.setItem(key, (taken + numParticipants).toString())
+    
+    const numParticipants = Number.parseInt(bookingFormData.number, 10)
+    if (!valid) {
+      setIsSubmitting(false)
+      return
     }
 
-    // Assign seats only for spectators
-    let assignedSeats: number[] = []
-    if (bookingTab === "spectators" && bookingFormData.eventName) {
-      const taken = getSeatsTaken(bookingFormData.eventName)
-      let allSeats: number[] = []
-      const seatsStr = localStorage.getItem(`seatnums_${bookingFormData.eventName}`)
-      if (seatsStr) {
-        allSeats = JSON.parse(seatsStr)
+    try {
+      // Check participant/spectator limits
+      if (bookingTab === "participants") {
+        const key = `participants_${bookingFormData.event_name}`
+        const taken = parseInt(localStorage.getItem(key) || "0", 10)
+        if (taken + numParticipants > PARTICIPANT_LIMIT) {
+          setPhoneError("Booking Closed: Participant limit reached.")
+          setIsSubmitting(false)
+          return
+        }
+        localStorage.setItem(key, (taken + numParticipants).toString())
+      } else {
+        const key = `spectators_total`
+        const taken = parseInt(localStorage.getItem(key) || "0", 10)
+        if (taken + numParticipants > SPECTATOR_LIMIT) {
+          setPhoneError("Booking Closed: Spectator limit reached.")
+          setIsSubmitting(false)
+          return
+        }
+        localStorage.setItem(key, (taken + numParticipants).toString())
       }
-      const availableSeats = Array.from({ length: MAX_SEATS }, (_, i) => i + 1).filter((n) => !allSeats.includes(n))
-      for (let i = 0; i < numParticipants; i++) {
-        if (availableSeats.length === 0) break
-        const idx = Math.floor(Math.random() * availableSeats.length)
-        assignedSeats.push(availableSeats[idx])
-        availableSeats.splice(idx, 1)
+
+      // Assign seats for spectators
+      let assignedSeats: number[] = []
+      if (bookingTab === "spectators" && bookingFormData.event_name) {
+        const taken = getSeatsTaken(bookingFormData.event_name)
+        let allSeats: number[] = []
+        const seatsStr = localStorage.getItem(`seatnums_${bookingFormData.event_name}`)
+        if (seatsStr) {
+          allSeats = JSON.parse(seatsStr)
+        }
+        const availableSeats = Array.from({ length: MAX_SEATS }, (_, i) => i + 1).filter((n) => !allSeats.includes(n))
+        for (let i = 0; i < numParticipants; i++) {
+          if (availableSeats.length === 0) break
+          const idx = Math.floor(Math.random() * availableSeats.length)
+          assignedSeats.push(availableSeats[idx])
+          availableSeats.splice(idx, 1)
+        }
+        const updatedSeats = allSeats.concat(assignedSeats)
+        localStorage.setItem(`seatnums_${bookingFormData.event_name}`, JSON.stringify(updatedSeats))
+        setSeatsTaken(bookingFormData.event_name, taken + numParticipants)
       }
-      const updatedSeats = allSeats.concat(assignedSeats)
-      localStorage.setItem(`seatnums_${bookingFormData.eventName}`, JSON.stringify(updatedSeats))
-      setSeatsTaken(bookingFormData.eventName, taken + (Number.parseInt(bookingFormData.participants, 10) || 1))
+      
+      setSeatNumbers(assignedSeats)
+      const regId = generateRegistrationId()
+      setRegistrationId(regId)
+
+      // Prepare data for Supabase - matching the database column names
+      const registrationData = {
+        type: bookingTab as 'participant' | 'spectator',
+        event_name: bookingFormData.event_name,
+        name: bookingFormData.name,
+        email: bookingFormData.email,
+        phone: bookingFormData.phone,
+        number: numParticipants,
+        // Map special_requirements to spl_requirements (database column name)
+        spl_requirements: bookingFormData.special_requirements || null,
+        // Map seat_numbers to seat_no (database column name)
+        seat_no: bookingTab === "spectators" ? assignedSeats.join(", ") : null,
+      }
+
+      // Save to Supabase using the helper function
+      const savedRegistration = await insertRegistration(registrationData)
+      
+      console.log("Registration saved successfully:", savedRegistration)
+      
+      // Show success modal
+      setShowSuccessModal(true)
+      setDownloadUrl(null)
+      
+    } catch (error) {
+      console.error("Error saving registration:", error)
+      setPhoneError("There was an error saving your registration. Please try again.")
+    } finally {
+      setIsSubmitting(false)
     }
-    setSeatNumbers(assignedSeats)
-    const regId = generateRegistrationId()
-    setRegistrationId(regId)
-    setShowSuccessModal(true)
-    setDownloadUrl(null)
   }
 
   const handleDownload = async () => {
-    if (isDownloading) return;
+    if (isDownloading) return
 
-    setIsDownloading(true);
+    setIsDownloading(true)
 
     try {
-      if (!jsPDF) throw new Error("jsPDF is not loaded");
-      if (!QRCode) throw new Error("QRCode is not loaded");
+      if (!jsPDF) throw new Error("jsPDF is not loaded")
+      if (!QRCode) throw new Error("QRCode is not loaded")
 
-      const now = new Date();
-      const price = getEventPrice(bookingFormData.eventName, bookingFormData.participants);
-      const regId = registrationId || generateRegistrationId();
+      const now = new Date()
+      const price = getEventPrice(bookingFormData.event_name, bookingFormData.number)
+      const regId = registrationId || generateRegistrationId()
 
-      // Generate QR code data
       const qrData = JSON.stringify({
         registrationId: regId,
-        name: bookingFormData.participantName,
-        event: bookingFormData.eventName,
-        participants: bookingFormData.participants,
+        name: bookingFormData.name,
+        event: bookingFormData.event_name,
+        participants: bookingFormData.number,
         date: now.toLocaleString(),
-        seatNumbers: bookingTab === "spectators" ? seatNumbers : [], // Include seat numbers only for spectators
-      });
+        seatNumbers: bookingTab === "spectators" ? seatNumbers : [],
+      })
 
-      // Generate QR code with higher quality
       const qrCodeUrl = await QRCode.toDataURL(qrData, {
-        width: 100, // Reduced size for better layout
+        width: 100,
         margin: 2,
         errorCorrectionLevel: "H",
         color: {
           dark: "#2f3241",
           light: "#ffffff",
         },
-      });
+      })
 
-      // Create logo matching Navbar design
       const logoSvg = `
         <svg width="60" height="60" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -408,207 +441,186 @@ const Events: React.FC = () => {
           <rect width="24" height="24" rx="4" fill="url(#logoGrad)" />
           <path d="M13 10V3L4 14h7v7l9-11h-7z" fill="#ffffff" stroke="#ffffff" stroke-width="0.5" />
         </svg>
-      `;
-      const logoBase64 = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(logoSvg)));
+      `
+      const logoBase64 = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(logoSvg)))
 
-      // Create PDF (A5 landscape for balanced layout)
       const doc = new jsPDF({
         unit: "mm",
-        format: [210, 148], // A5 landscape
+        format: [210, 148],
         orientation: "landscape",
-      });
+      })
 
-      // Background with subtle gradient
-      doc.setFillColor(245, 245, 245); // Light gray background
-      doc.rect(0, 0, 210, 148, "F");
+      doc.setFillColor(245, 245, 245)
+      doc.rect(0, 0, 210, 148, "F")
 
-      // Main ticket container with rounded corners and shadow
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(10, 10, 190, 128, 8, 8, "F");
-      doc.setDrawColor(200, 200, 200);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(10, 10, 190, 128, 8, 8, "S");
+      doc.setFillColor(255, 255, 255)
+      doc.roundedRect(10, 10, 190, 128, 8, 8, "F")
+      doc.setDrawColor(200, 200, 200)
+      doc.setLineWidth(0.3)
+      doc.roundedRect(10, 10, 190, 128, 8, 8, "S")
 
-      // Header with gradient background
-      doc.setFillColor(47, 50, 65); // #2f3241
-      doc.roundedRect(10, 10, 190, 25, 8, 8, "F");
-      doc.rect(10, 27, 190, 8, "F");
+      doc.setFillColor(47, 50, 65)
+      doc.roundedRect(10, 10, 190, 25, 8, 8, "F")
+      doc.rect(10, 27, 190, 8, "F")
 
-      // Add logo
       try {
-        doc.addImage(logoBase64, "PNG", 15, 12, 18, 18);
+        doc.addImage(logoBase64, "PNG", 15, 12, 18, 18)
       } catch (imgErr) {
-        console.warn("Logo failed to load");
+        console.warn("Logo failed to load")
       }
 
-      // Header text
-      doc.setFontSize(20);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.text("ArenaHub", 35, 22);
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.text("Premium Sports & Events Platform", 35, 28);
+      doc.setFontSize(20)
+      doc.setTextColor(255, 255, 255)
+      doc.setFont("helvetica", "bold")
+      doc.text("ArenaHub", 35, 22)
+      doc.setFontSize(9)
+      doc.setFont("helvetica", "normal")
+      doc.text("Premium Sports & Events Platform", 35, 28)
 
-      // Ticket type badge
-      doc.setFillColor(255, 94, 20); // #ff5e14
-      doc.roundedRect(160, 14, 30, 10, 5, 5, "F");
-      doc.setFontSize(8);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.text(bookingTab === "participants" ? "PARTICIPANT" : "SPECTATOR", 175, 20, { align: "center" });
+      doc.setFillColor(255, 94, 20)
+      doc.roundedRect(160, 14, 30, 10, 5, 5, "F")
+      doc.setFontSize(8)
+      doc.setTextColor(255, 255, 255)
+      doc.setFont("helvetica", "bold")
+      doc.text(bookingTab === "participants" ? "PARTICIPANT" : "SPECTATOR", 175, 20, { align: "center" })
 
-      // Main title
-      doc.setFontSize(16);
-      doc.setTextColor(47, 50, 65); // #2f3241
-      doc.setFont("helvetica", "bold");
-      doc.text("Registration Confirmation", 105, 45, { align: "center" });
+      doc.setFontSize(16)
+      doc.setTextColor(47, 50, 65)
+      doc.setFont("helvetica", "bold")
+      doc.text("Registration Confirmation", 105, 45, { align: "center" })
 
-      // Info sections
-      // Left column: Participant Info
-      let y = 55;
-      doc.setFillColor(245, 245, 245);
-      doc.roundedRect(15, 50, 90, 60, 6, 6, "F");
-      doc.setFontSize(11);
-      doc.setTextColor(255, 94, 20);
-      doc.setFont("helvetica", "bold");
-      doc.text("PARTICIPANT INFO", 20, y);
-      y += 8;
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont("helvetica", "normal");
-      doc.text("Name", 20, y);
-      doc.setFontSize(10);
-      doc.setTextColor(47, 50, 65);
-      doc.text(bookingFormData.participantName.substring(0, 30), 20, y + 5);
-      y += 15;
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont("helvetica", "normal");
-      doc.text("Registration ID", 20, y);
-      doc.setFontSize(10);
-      doc.setTextColor(255, 94, 20);
-      doc.text(regId, 20, y + 5);
-      y += 15;
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont("helvetica", "normal");
-      doc.text("Participants", 20, y);
-      doc.setFontSize(10);
-      doc.setTextColor(47, 50, 65);
-      doc.text(bookingFormData.participants, 20, y + 5);
+      let y = 55
+      doc.setFillColor(245, 245, 245)
+      doc.roundedRect(15, 50, 90, 60, 6, 6, "F")
+      doc.setFontSize(11)
+      doc.setTextColor(255, 94, 20)
+      doc.setFont("helvetica", "bold")
+      doc.text("PARTICIPANT INFO", 20, y)
+      y += 8
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
+      doc.setFont("helvetica", "normal")
+      doc.text("Name", 20, y)
+      doc.setFontSize(10)
+      doc.setTextColor(47, 50, 65)
+      doc.text(bookingFormData.name.substring(0, 30), 20, y + 5)
+      y += 15
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
+      doc.text("Registration ID", 20, y)
+      doc.setFontSize(10)
+      doc.setTextColor(255, 94, 20)
+      doc.text(regId, 20, y + 5)
+      y += 15
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
+      doc.text("Participants", 20, y)
+      doc.setFontSize(10)
+      doc.setTextColor(47, 50, 65)
+      doc.text(bookingFormData.number, 20, y + 5)
 
-      // Right column: Event Info
-      y = 55;
-      doc.setFillColor(245, 245, 245);
-      doc.roundedRect(110, 50, 85, bookingTab === "spectators" ? 75 : 60, 6, 6, "F");
-      doc.setFontSize(11);
-      doc.setTextColor(255, 94, 20);
-      doc.setFont("helvetica", "bold");
-      doc.text("EVENT INFO", 115, y);
-      y += 8;
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont("helvetica", "normal");
-      doc.text("Event Name", 115, y);
-      doc.setFontSize(10);
-      doc.setTextColor(47, 50, 65);
-      const eventLines = doc.splitTextToSize(bookingFormData.eventName, 65);
-      doc.text(eventLines, 115, y + 5);
-      y += eventLines.length * 5 + 10;
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont("helvetica", "normal");
-      doc.text("Date & Time", 115, y);
-      doc.setFontSize(10);
-      doc.setTextColor(47, 50, 65);
-      const eventObj = eventsData.find((e) => e.title === bookingFormData.eventName);
-      const eventDateTime = eventObj ? eventObj.date : "-";
-      const dateLines = doc.splitTextToSize(eventDateTime, 65);
-      doc.text(dateLines, 115, y + 5);
-      y += dateLines.length * 5 + 10;
+      y = 55
+      doc.setFillColor(245, 245, 245)
+      doc.roundedRect(110, 50, 85, bookingTab === "spectators" ? 75 : 60, 6, 6, "F")
+      doc.setFontSize(11)
+      doc.setTextColor(255, 94, 20)
+      doc.setFont("helvetica", "bold")
+      doc.text("EVENT INFO", 115, y)
+      y += 8
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
+      doc.setFont("helvetica", "normal")
+      doc.text("Event Name", 115, y)
+      doc.setFontSize(10)
+      doc.setTextColor(47, 50, 65)
+      const eventLines = doc.splitTextToSize(bookingFormData.event_name, 65)
+      doc.text(eventLines, 115, y + 5)
+      y += eventLines.length * 5 + 10
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
+      doc.text("Date & Time", 115, y)
+      doc.setFontSize(10)
+      doc.setTextColor(47, 50, 65)
+      const eventObj = eventsData.find((e) => e.title === bookingFormData.event_name)
+      const eventDateTime = eventObj ? eventObj.date : "-"
+      const dateLines = doc.splitTextToSize(eventDateTime, 65)
+      doc.text(dateLines, 115, y + 5)
+      y += dateLines.length * 5 + 10
       if (bookingTab === "spectators") {
-        doc.setFontSize(9);
-        doc.setTextColor(100, 100, 100);
-        doc.setFont("helvetica", "normal");
-        doc.text("Seat Numbers", 115, y);
-        doc.setFontSize(10);
-        doc.setTextColor(47, 50, 65);
-        doc.text(seatNumbers.length > 0 ? seatNumbers.join(", ") : "N/A", 115, y + 5);
+        doc.setFontSize(9)
+        doc.setTextColor(100, 100, 100)
+        doc.text("Seat Numbers", 115, y)
+        doc.setFontSize(10)
+        doc.setTextColor(47, 50, 65)
+        doc.text(seatNumbers.length > 0 ? seatNumbers.join(", ") : "N/A", 115, y + 5)
       }
 
-      // QR Code section
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(150, 90, 30, 30, 5, 5, "F");
-      doc.setDrawColor(200, 200, 200);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(150, 90, 30, 30, 5, 5, "D");
-      doc.addImage(qrCodeUrl, "PNG", 152, 92, 26, 26);
-      doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont("helvetica", "normal");
-      doc.text("Scan to Verify", 165, 127, { align: "center" });
+      doc.setFillColor(255, 255, 255)
+      doc.roundedRect(150, 90, 30, 30, 5, 5, "F")
+      doc.setDrawColor(200, 200, 200)
+      doc.setLineWidth(0.3)
+      doc.roundedRect(150, 90, 30, 30, 5, 5, "D")
+      doc.addImage(qrCodeUrl, "PNG", 152, 92, 26, 26)
+      doc.setFontSize(8)
+      doc.setTextColor(100, 100, 100)
+      doc.text("Scan to Verify", 165, 127, { align: "center" })
 
-      // Price section
-      doc.setFillColor(34, 197, 94);
-      doc.roundedRect(15, 115, 80, 12, 5, 5, "F");
-      doc.setFontSize(10);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.text(`Amount: ${price}`, 55, 122, { align: "center" });
+      doc.setFillColor(34, 197, 94)
+      doc.roundedRect(15, 115, 80, 12, 5, 5, "F")
+      doc.setFontSize(10)
+      doc.setTextColor(255, 255, 255)
+      doc.setFont("helvetica", "bold")
+      doc.text(`Amount: ${price}`, 55, 122, { align: "center" })
 
-      // Status and Registration Date
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont("helvetica", "normal");
-      doc.text("Registration Date", 115, 115);
-      doc.setFontSize(10);
-      doc.setTextColor(47, 50, 65);
-      doc.text(now.toLocaleDateString(), 115, 120);
-      doc.setFillColor(255, 94, 20);
-      doc.circle(190, 130, 3, "F");
-      doc.setFontSize(8);
-      doc.setTextColor(255, 94, 20);
-      doc.text("CONFIRMED", 165, 135, { align: "center" });
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
+      doc.text("Registration Date", 115, 115)
+      doc.setFontSize(10)
+      doc.setTextColor(47, 50, 65)
+      doc.text(now.toLocaleDateString(), 115, 120)
+      doc.setFillColor(255, 94, 20)
+      doc.circle(190, 130, 3, "F")
+      doc.setFontSize(8)
+      doc.setTextColor(255, 94, 20)
+      doc.text("CONFIRMED", 165, 135, { align: "center" })
 
-      // Footer
-      doc.setDrawColor(200, 200, 200);
-      doc.setLineWidth(0.3);
-      doc.line(10, 135, 200, 135);
-      doc.setFontSize(7);
-      doc.setTextColor(100, 100, 100);
-      doc.text("ArenaHub | support@arenahub.com | www.arenahub.com", 105, 142, { align: "center" });
+      doc.setDrawColor(200, 200, 200)
+      doc.setLineWidth(0.3)
+      doc.line(10, 135, 200, 135)
+      doc.setFontSize(7)
+      doc.setTextColor(100, 100, 100)
+      doc.text("ArenaHub | support@arenahub.com | www.arenahub.com", 105, 142, { align: "center" })
 
-      // Watermark
       try {
-        doc.addImage(logoBase64, "PNG", 80, 50, 50, 50, "", "NONE", 0.05);
+        doc.addImage(logoBase64, "PNG", 80, 50, 50, 50, "", "NONE", 0.05)
       } catch (imgErr) {
-        console.warn("Watermark failed");
+        console.warn("Watermark failed")
       }
 
-      // Save the PDF
-      const fileName = `ArenaHub-Ticket-${regId}.pdf`;
-      doc.save(fileName);
+      const fileName = `ArenaHub-Ticket-${regId}.pdf`
+      doc.save(fileName)
 
-      console.log("Enhanced PDF generated successfully");
+      console.log("Enhanced PDF generated successfully")
     } catch (error) {
-      console.error("Error generating PDF:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      alert("Error generating PDF. Please try again or contact support if the issue persists.\n" + errorMessage);
+      console.error("Error generating PDF:", error)
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+      alert("Error generating PDF. Please try again or contact support if the issue persists.\n" + errorMessage)
     } finally {
-      setIsDownloading(false);
+      setIsDownloading(false)
     }
   }
 
   const closeModal = () => {
     setShowSuccessModal(false)
     setBookingFormData({
-      eventName: "",
-      participantName: "",
+      event_name: "",
+      name: "",
       email: "",
       phone: "",
-      participants: "",
-      specialRequirements: "",
+      number: "",
+      special_requirements: "",
+      seat_numbers: "",
+      type: "participant",
     })
     setRegistrationId(null)
     setSeatNumbers([])
@@ -803,18 +815,23 @@ const Events: React.FC = () => {
             <div className="w-20 h-1 bg-[#ff5e14] mx-auto mt-4"></div>
           </div>
 
-          {/* Tabs for Participants/Spectators */}
           <div className="flex justify-center mb-8 gap-4">
             <button
               className={`px-6 py-2 rounded-full font-semibold text-base border transition-all duration-200 ${bookingTab === 'participants' ? 'bg-[#ff5e14] text-white border-[#ff5e14]' : 'bg-white text-[#2f3241] border-gray-300 hover:bg-gray-100'}`}
-              onClick={() => setBookingTab('participants')}
+              onClick={() => {
+                setBookingTab('participants')
+                setBookingFormData({ ...bookingFormData, type: "participant" })
+              }}
               type="button"
             >
               Participants
             </button>
             <button
               className={`px-6 py-2 rounded-full font-semibold text-base border transition-all duration-200 ${bookingTab === 'spectators' ? 'bg-[#ff5e14] text-white border-[#ff5e14]' : 'bg-white text-[#2f3241] border-gray-300 hover:bg-gray-100'}`}
-              onClick={() => setBookingTab('spectators')}
+              onClick={() => {
+                setBookingTab('spectators')
+                setBookingFormData({ ...bookingFormData, type: "spectator" })
+              }}
               type="button"
             >
               Spectators
@@ -828,8 +845,8 @@ const Events: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Event Name</label>
                   <select
                     className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
-                    value={bookingFormData.eventName}
-                    onChange={(e) => setBookingFormData({ ...bookingFormData, eventName: e.target.value })}
+                    value={bookingFormData.event_name}
+                    onChange={(e) => setBookingFormData({ ...bookingFormData, event_name: e.target.value })}
                     required
                     disabled={bookingTab === 'spectators' && !eventsData.some(e => e.registrationOpen)}
                   >
@@ -848,8 +865,8 @@ const Events: React.FC = () => {
                     type="text"
                     className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
                     placeholder="Enter your full name"
-                    value={bookingFormData.participantName}
-                    onChange={(e) => setBookingFormData({ ...bookingFormData, participantName: e.target.value })}
+                    value={bookingFormData.name}
+                    onChange={(e) => setBookingFormData({ ...bookingFormData, name: e.target.value })}
                     required
                   />
                 </div>
@@ -892,13 +909,13 @@ const Events: React.FC = () => {
                     type="number"
                     className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
                     placeholder={`Enter number of ${bookingTab === 'participants' ? 'participants' : 'spectators'}`}
-                    value={bookingFormData.participants}
-                    onChange={(e) => setBookingFormData({ ...bookingFormData, participants: e.target.value })}
+                    value={bookingFormData.number}
+                    onChange={(e) => setBookingFormData({ ...bookingFormData, number: e.target.value })}
                     min={1}
                     max={bookingTab === 'participants' ? PARTICIPANT_LIMIT : SPECTATOR_LIMIT}
                     required
                     disabled={
-                      (bookingTab === 'participants' && parseInt(localStorage.getItem(`participants_${bookingFormData.eventName}`) || '0', 10) >= PARTICIPANT_LIMIT) ||
+                      (bookingTab === 'participants' && parseInt(localStorage.getItem(`participants_${bookingFormData.event_name}`) || '0', 10) >= PARTICIPANT_LIMIT) ||
                       (bookingTab === 'spectators' && parseInt(localStorage.getItem('spectators_total') || '0', 10) >= SPECTATOR_LIMIT)
                     }
                   />
@@ -910,16 +927,15 @@ const Events: React.FC = () => {
                     <textarea
                       className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-[#ff5e14] focus:border-transparent"
                       placeholder="Any special requirements or requests"
-                      value={bookingFormData.specialRequirements}
-                      onChange={(e) => setBookingFormData({ ...bookingFormData, specialRequirements: e.target.value })}
+                      value={bookingFormData.special_requirements}
+                      onChange={(e) => setBookingFormData({ ...bookingFormData, special_requirements: e.target.value })}
                       rows={4}
                     ></textarea>
                   </div>
                 )}
               </div>
 
-              {/* Booking closed message */}
-              {bookingTab === 'participants' && bookingFormData.eventName && parseInt(localStorage.getItem(`participants_${bookingFormData.eventName}`) || '0', 10) >= PARTICIPANT_LIMIT && (
+              {bookingTab === 'participants' && bookingFormData.event_name && parseInt(localStorage.getItem(`participants_${bookingFormData.event_name}`) || '0', 10) >= PARTICIPANT_LIMIT && (
                 <div className="text-center text-red-600 font-semibold py-2">Booking Closed: Participant limit reached for this event.</div>
               )}
               {bookingTab === 'spectators' && parseInt(localStorage.getItem('spectators_total') || '0', 10) >= SPECTATOR_LIMIT && (
@@ -930,13 +946,28 @@ const Events: React.FC = () => {
                 <p className="text-sm text-gray-600">By submitting this form, you agree to our terms and conditions.</p>
                 <button
                   type="submit"
-                  className="bg-[#ff5e14] text-white px-8 py-3 rounded-md hover:bg-[#e54d00] transition-colors duration-300"
+                  className={`px-8 py-3 rounded-md font-medium transition-all duration-200 ${
+                    isSubmitting 
+                      ? "bg-gray-400 text-white cursor-not-allowed"
+                      : "bg-[#ff5e14] text-white hover:bg-[#e54d00]"
+                  }`}
                   disabled={
-                    (bookingTab === 'participants' && bookingFormData.eventName && parseInt(localStorage.getItem(`participants_${bookingFormData.eventName}`) || '0', 10) >= PARTICIPANT_LIMIT) ||
+                    isSubmitting ||
+                    (bookingTab === 'participants' && bookingFormData.event_name && parseInt(localStorage.getItem(`participants_${bookingFormData.event_name}`) || '0', 10) >= PARTICIPANT_LIMIT) ||
                     (bookingTab === 'spectators' && parseInt(localStorage.getItem('spectators_total') || '0', 10) >= SPECTATOR_LIMIT)
                   }
                 >
-                  Submit Registration
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Submitting...
+                    </>
+                  ) : (
+                    "Submit Registration"
+                  )}
                 </button>
               </div>
             </form>
@@ -1078,7 +1109,7 @@ const Events: React.FC = () => {
                 </svg>
               </div>
               <h2 className="text-2xl font-bold mb-2 text-[#2f3241]">Registration Successful!</h2>
-              <p className="text-gray-600 mb-4">Your event registration has been submitted successfully.</p>
+              <p className="text-gray-600 mb-4">Your event registration has been submitted successfully and saved to our database.</p>
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
@@ -1089,11 +1120,11 @@ const Events: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-700">Event:</span>
-                  <span className="font-semibold">{bookingFormData.eventName}</span>
+                  <span className="font-semibold">{bookingFormData.event_name}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-700">Participants:</span>
-                  <span className="font-semibold">{bookingFormData.participants}</span>
+                  <span className="font-semibold">{bookingFormData.number}</span>
                 </div>
                 {bookingTab === "spectators" && (
                   <div className="flex justify-between">
@@ -1104,7 +1135,7 @@ const Events: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="font-medium text-gray-700">Price (Pay on Spot):</span>
                   <span className="font-semibold text-green-600">
-                    {getEventPrice(bookingFormData.eventName, bookingFormData.participants)}
+                    {getEventPrice(bookingFormData.event_name, bookingFormData.number)}
                   </span>
                 </div>
               </div>
