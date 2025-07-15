@@ -233,9 +233,9 @@ const Booking: React.FC = () => {
       return;
     }
 
-    // Log the data being sent
+    // Log the data being sent with updated booking_type
     const bookingData = {
-      booking_type: 'regular',
+      booking_type: priceTab === 'pay' ? 'pay per use' : 'membership',
       sport: formData.sport,
       location: formData.location,
       time_slot: formData.time,
